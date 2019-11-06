@@ -417,9 +417,7 @@ const eventTargetHelpers = {
       }
 
       try {
-        if (listener.callback) {
-          listener.handleEvent(eventImpl);
-        }
+        listener.handleEvent(eventImpl);
       } catch (error) {
         throw new DenoError(ErrorKind.Interrupted, error.message);
       }

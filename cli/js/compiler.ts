@@ -173,7 +173,7 @@ class SourceFile {
     }
     assert(this.sourceCode != null);
     const preProcessedFileInfo = ts.preProcessFile(
-      this.sourceCode!,
+      this.sourceCode,
       true,
       true
     );
@@ -470,10 +470,10 @@ class Host implements ts.CompilerHost {
         ? this._getAsset(fileName)
         : SourceFile.get(fileName);
       assert(sourceFile != null);
-      if (!sourceFile!.tsSourceFile) {
-        sourceFile!.tsSourceFile = ts.createSourceFile(
+      if (!sourceFile.tsSourceFile) {
+        sourceFile.tsSourceFile = ts.createSourceFile(
           fileName,
-          sourceFile!.sourceCode,
+          sourceFile.sourceCode,
           languageVersion
         );
       }
@@ -535,7 +535,7 @@ class Host implements ts.CompilerHost {
         emitBundle(this._bundle, data);
       } else {
         assert(sourceFiles != null && sourceFiles.length == 1);
-        const url = sourceFiles![0].fileName;
+        const url = sourceFiles[0].fileName;
         const sourceFile = SourceFile.get(url);
 
         if (sourceFile) {

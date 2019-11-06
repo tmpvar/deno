@@ -131,7 +131,7 @@ export function equal(c: unknown, d: unknown): boolean {
 }
 
 /** Make an assertion, if not `true`, then throw. */
-export function assert(expr: boolean, msg = ""): void {
+export function assert(expr: unknown, msg = ""): asserts expr {
   if (!expr) {
     throw new AssertionError(msg);
   }

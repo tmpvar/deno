@@ -26,7 +26,7 @@ export function log(...args: unknown[]): void {
 }
 
 // @internal
-export function assert(cond: boolean, msg = "assert"): void {
+export function assert(cond: unknown, msg = "assert"): asserts cond {
   if (!cond) {
     throw Error(msg);
   }
