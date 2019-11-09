@@ -27,7 +27,7 @@ export const eventTargetHasActivationBehavior: unique symbol = Symbol();
 export class EventTarget implements domTypes.EventTarget {
   public [domTypes.eventTargetHost]: domTypes.EventTarget | null = null;
   public [domTypes.eventTargetListeners]: {
-    [type in string]: domTypes.EventListener[]
+    [type in string]: domTypes.EventListener[];
   } = {};
   public [domTypes.eventTargetMode] = "";
   public [domTypes.eventTargetNodeType]: domTypes.NodeType =
