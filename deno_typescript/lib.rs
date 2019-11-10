@@ -286,7 +286,9 @@ pub fn get_asset(name: &str) -> Option<&'static str> {
     "lib.es2019.string.d.ts" => inc!("lib.es2019.string.d.ts"),
     "lib.es2019.symbol.d.ts" => inc!("lib.es2019.symbol.d.ts"),
     "lib.es2020.string.d.ts" => inc!("lib.es2020.string.d.ts"),
-    "lib.es2020.symbol.wellknown.d.ts" => inc!("lib.es2020.symbol.wellknown.d.ts"),
+    "lib.es2020.symbol.wellknown.d.ts" => {
+      inc!("lib.es2020.symbol.wellknown.d.ts")
+    }
     "lib.esnext.array.d.ts" => inc!("lib.esnext.array.d.ts"),
     "lib.esnext.asynciterable.d.ts" => inc!("lib.esnext.asynciterable.d.ts"),
     "lib.esnext.bigint.d.ts" => inc!("lib.esnext.bigint.d.ts"),
