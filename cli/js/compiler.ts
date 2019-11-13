@@ -31,6 +31,13 @@ enum MediaType {
   Unknown = 5
 }
 
+// Warning! The values in this enum are duplicated in cli/msg.rs
+// Update carefully!
+enum CompilerRequestType {
+  Compile = 0,
+  Bundle = 1
+}
+
 // Startup boilerplate. This is necessary because the compiler has its own
 // snapshot. (It would be great if we could remove these things or centralize
 // them somewhere else.)
@@ -44,16 +51,23 @@ window["denoMain"] = denoMain;
 
 const ASSETS = "$asset$";
 const OUT_DIR = "$deno$";
+const BUNDLE_LOADER = "bundle_loader.js";
 
 /** The format of the work message payload coming from the privileged side */
-interface CompilerReq {
+type CompilerRequest = {
   rootNames: string[];
-  bundle?: string;
   // TODO(ry) add compiler config to this interface.
   // options: ts.CompilerOptions;
   configPath?: string;
   config?: string;
-}
+} & (
+  | {
+      type: CompilerRequestType.Compile;
+    }
+  | {
+      type: CompilerRequestType.Bundle;
+      outFile?: string;
+    });
 
 interface ConfigureResponse {
   ignoredOptions?: string[];
@@ -267,7 +281,7 @@ function fetchSourceFiles(
 async function processImports(
   specifiers: Array<[string, string]>,
   referrer = ""
-): Promise<void> {
+): Promise<SourceFileJson[]> {
   if (!specifiers.length) {
     return;
   }
@@ -283,6 +297,7 @@ async function processImports(
       await processImports(sourceFile.imports(), sourceFile.url);
     }
   }
+  return sourceFiles;
 }
 
 /** Utility function to turn the number of bytes into a human readable
@@ -310,16 +325,36 @@ function cache(extension: string, moduleId: string, contents: string): void {
 const encoder = new TextEncoder();
 
 /** Given a fileName and the data, emit the file to the file system. */
-function emitBundle(fileName: string, data: string): void {
+function emitBundle(
+  rootNames: string[],
+  fileName: string | undefined,
+  data: string,
+  sourceFiles: readonly ts.SourceFile[]
+): void {
   // For internal purposes, when trying to emit to `$deno$` just no-op
-  if (fileName.startsWith("$deno$")) {
+  if (fileName && fileName.startsWith("$deno$")) {
     console.warn("skipping emitBundle", fileName);
     return;
   }
-  const encodedData = encoder.encode(data);
-  console.log(`Emitting bundle to "${fileName}"`);
-  writeFileSync(fileName, encodedData);
-  console.log(`${humanFileSize(encodedData.length)} emitted.`);
+  const loader = fetchAsset(BUNDLE_LOADER);
+  // when outputting to AMD and a single outfile, TypeScript makes up the module
+  // specifiers which are used to define the modules, and doesn't expose them
+  // publicly, so we have to try to replicate
+  const sources = sourceFiles.map(sf => sf.fileName);
+  const sharedPath = util.commonPath(sources);
+  rootNames = rootNames.map(id =>
+    id.replace(sharedPath, "").replace(/\.\w+$/i, "")
+  );
+  const instantiate = `instantiate(${JSON.stringify(rootNames)});\n`;
+  const bundle = `${loader}\n${data}\n${instantiate}`;
+  if (fileName) {
+    const encodedData = encoder.encode(bundle);
+    console.warn(`Emitting bundle to "${fileName}"`);
+    writeFileSync(fileName, encodedData);
+    console.warn(`${humanFileSize(encodedData.length)} emitted.`);
+  } else {
+    console.log(bundle);
+  }
 }
 
 /** Returns the TypeScript Extension enum for a given media type. */
@@ -376,17 +411,23 @@ class Host implements ts.CompilerHost {
 
   /** Provides the `ts.HostCompiler` interface for Deno.
    *
+   * @param _rootNames A set of modules that are the ones that should be
+   *   instantiated first.  Used when generating a bundle.
    * @param _bundle Set to a string value to configure the host to write out a
    *   bundle instead of caching individual files.
    */
-  constructor(private _bundle?: string) {
-    if (this._bundle) {
+  constructor(
+    private _requestType: CompilerRequestType,
+    private _rootNames: string[],
+    private _outFile?: string
+  ) {
+    if (this._requestType === CompilerRequestType.Bundle) {
       // options we need to change when we are generating a bundle
       const bundlerOptions: ts.CompilerOptions = {
         module: ts.ModuleKind.AMD,
-        inlineSourceMap: true,
         outDir: undefined,
         outFile: `${OUT_DIR}/bundle.js`,
+        // disabled until we have effective way to modify source maps
         sourceMap: false
       };
       Object.assign(this._options, bundlerOptions);
@@ -527,10 +568,11 @@ class Host implements ts.CompilerHost {
   ): void {
     util.log("compiler::host.writeFile", fileName);
     try {
-      if (this._bundle) {
-        emitBundle(this._bundle, data);
+      assert(sourceFiles != null);
+      if (this._requestType === CompilerRequestType.Bundle) {
+        emitBundle(this._rootNames, this._outFile, data, sourceFiles!);
       } else {
-        assert(sourceFiles != null && sourceFiles.length == 1);
+        assert(sourceFiles.length == 1);
         const url = sourceFiles[0].fileName;
         const sourceFile = SourceFile.get(url);
 
@@ -575,16 +617,29 @@ class Host implements ts.CompilerHost {
 // lazy instantiating the compiler web worker
 window.compilerMain = function compilerMain(): void {
   // workerMain should have already been called since a compiler is a worker.
-  window.onmessage = async ({ data }: { data: CompilerReq }): Promise<void> => {
-    const { rootNames, configPath, config, bundle } = data;
-    util.log(">>> compile start", { rootNames, bundle });
+  window.onmessage = async ({
+    data: request
+  }: {
+    data: CompilerRequest;
+  }): Promise<void> => {
+    const { rootNames, configPath, config } = request;
+    util.log(">>> compile start", {
+      rootNames,
+      type: CompilerRequestType[request.type]
+    });
 
     // This will recursively analyse all the code for other imports, requesting
     // those from the privileged side, populating the in memory cache which
     // will be used by the host, before resolving.
-    await processImports(rootNames.map(rootName => [rootName, rootName]));
+    const resolvedRootModules = (await processImports(
+      rootNames.map(rootName => [rootName, rootName])
+    )).map(info => info.url);
 
-    const host = new Host(bundle);
+    const host = new Host(
+      request.type,
+      resolvedRootModules,
+      request.type === CompilerRequestType.Bundle ? request.outFile : undefined
+    );
     let emitSkipped = true;
     let diagnostics: ts.Diagnostic[] | undefined;
 
@@ -638,8 +693,9 @@ window.compilerMain = function compilerMain(): void {
 
       // We will only proceed with the emit if there are no diagnostics.
       if (diagnostics && diagnostics.length === 0) {
-        if (bundle) {
-          console.log(`Bundling "${bundle}"`);
+        if (request.type === CompilerRequestType.Bundle) {
+          // warning so it goes to stderr instead of stdout
+          console.warn(`Bundling "${resolvedRootModules.join(`", "`)}"`);
         }
         const emitResult = program.emit();
         emitSkipped = emitResult.emitSkipped;
@@ -658,7 +714,10 @@ window.compilerMain = function compilerMain(): void {
 
     postMessage(result);
 
-    util.log("<<< compile end", { rootNames, bundle });
+    util.log("<<< compile end", {
+      rootNames,
+      type: CompilerRequestType[request.type]
+    });
 
     // The compiler isolate exits after a single message.
     workerClose();
