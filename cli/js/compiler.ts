@@ -67,7 +67,8 @@ type CompilerRequest = {
   | {
       type: CompilerRequestType.Bundle;
       outFile?: string;
-    });
+    }
+);
 
 interface ConfigureResponse {
   ignoredOptions?: string[];
@@ -631,9 +632,9 @@ window.compilerMain = function compilerMain(): void {
     // This will recursively analyse all the code for other imports, requesting
     // those from the privileged side, populating the in memory cache which
     // will be used by the host, before resolving.
-    const resolvedRootModules = (await processImports(
-      rootNames.map(rootName => [rootName, rootName])
-    )).map(info => info.url);
+    const resolvedRootModules = (
+      await processImports(rootNames.map(rootName => [rootName, rootName]))
+    ).map(info => info.url);
 
     const host = new Host(
       request.type,
