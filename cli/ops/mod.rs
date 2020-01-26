@@ -1,6 +1,6 @@
 // Copyright 2018-2020 the Deno authors. All rights reserved. MIT license.
-mod dispatch_json;
-mod dispatch_minimal;
+pub mod dispatch_json;
+pub mod dispatch_minimal;
 
 pub use dispatch_json::json_op;
 pub use dispatch_json::JsonOp;
